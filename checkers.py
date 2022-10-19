@@ -56,5 +56,48 @@ class Board(object):
     def __repr__(self):
         return self.__str__()
 
+
 class Move(object):
-    
+    colors = ['B', 'W']
+    kings = ['BK', 'WK']
+    isking = False
+
+    def __init__(self, color='B', isking=False):
+        if color in self.colors:
+            self.color = color
+            self.isking = isking
+        else:
+            raise ValueError("The color should be B or W.")
+
+    def color(self):
+        return self.color
+
+    def is_black(self):
+        return self.color == 'B'
+
+    def is_white(self):
+        return self.color == 'W'
+
+    def is_king(self):
+        return self.isking
+
+    def turn_king(self):
+        self.isking = True
+        if self.color == "B":
+            self.color = "BK"
+        elif self.color == "W":
+            self.color = "WK"
+
+    def turn_pawn(self):
+        self.isking = False
+        if self.color == "BK":
+            self.color = "B"
+        elif self.color == "WK":
+            self.color = "W"
+
+    def __str__(self):
+        return self.color
+
+    def __repr__(self):
+        return self.__str__()
+
