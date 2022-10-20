@@ -1,9 +1,9 @@
-#%% import packages
+# %% import packages
 import numpy as np
 import pandas as pd
+import copy
 
-
-#%% Important classes
+# %% Important classes
 class Piece(object):
     king = False
 
@@ -42,24 +42,28 @@ class Board(object):
     def __init__(self):
         self.len = 8
         self.status = [[None for c in range(self.len)] for r in range(self.len)]
+        self.black_position = []
+        self.white_position = []
+
         for r in [0, 2]:
             for c in range(1, self.len, 2):
                 self.status[r][c] = Piece('Black')
+                self.black_position.append((r, c))
         for r in [1]:
             for c in range(0, self.len, 2):
                 self.status[r][c] = Piece('Black')
-        for r in [-2]:
+                self.black_position.append((r, c))
+        for r in [6]:
             for c in range(1, self.len, 2):
                 self.status[r][c] = Piece('White')
-        for r in [-1, -3]:
+                self.white_position.append((r, c))
+        for r in [5, 7]:
             for c in range(0, self.len, 2):
                 self.status[r][c] = Piece('White')
+                self.white_position.append((r, c))
 
     def is_free(self, row, col):
         return self.status[row][col] is None
-
-    def place(self, row, col, piece):
-        self.status[row][col] = piece
 
     def get_len(self):
         return self.len
@@ -68,7 +72,18 @@ class Board(object):
         return self.status[row][col]
 
     def remove(self, row, col):
+        if self.status[row][col].color == 'Black':
+            self.black_position.remove((row, col))
+        else:
+            self.white_position.remove((row, col))
         self.status[row][col] = None
+
+    def place(self, row, col, piece):
+        if piece.color == 'Black':
+            self.black_position.append((row, col))
+        else:
+            self.white_position.append((row, col))
+        self.status[row][col] = piece
 
     def is_empty(self):
         for r in range(self.len):
@@ -103,24 +118,34 @@ class Board(object):
         return self.__str__()
 
 
-#%% Vital function related to the game rule
-def is_over(state):
-    board = state[0]
-    turn = state[1]
-    depth = state[2]
-    (moves, captures) = crank.get_hints(board, turn)
-    if maxdepth is not None:
-        return ((not moves) and (not captures)) or depth >= maxdepth
-    else:
-        return ((not moves) and (not captures))
-
-
-def alpha_beta_agent(state):
-
-def move_generator(board, row, col):
+# %% Move and jump check
+def check_move(board, row, col):
     length = board.get_len()
     piece = board.get(row, col)
     moves = []
+    if piece:
+        color = piece.get_color()
+        king = piece.is_king()
+        if color == 'Black':
+            down = [(-1, -1), (-1, +1)]
+            up = [(+1, -1), (+1, +1)]
+        else:
+            up = [(-1, -1), (-1, +1)]
+            down = [(+1, -1), (+1, +1)]
+        for (x, y) in up:
+            if (0 <= row + x < length) and (0 <= col + y < length) and board.is_free(row + x, col + y):
+                moves.append((x, y))
+        if king:
+            for (x, y) in down:
+                if (0 <= row + x < length) and (0 <= col + y < length) and board.is_free(row + x, col + y):
+                    moves.append((x, y))
+    return moves
+
+
+def check_jump(board, row, col):
+    length = board.get_len()
+    piece = board.get(row, col)
+    jumps = []
     if piece:
         color = piece.get_color()
         king = piece.is_king()
@@ -130,32 +155,65 @@ def move_generator(board, row, col):
         else:
             down = [(-1, -1), (-1, +1)]
             up = [(+1, -1), (+1, +1)]
-        if king:
-            for move in up:
-                if board.is_free(row + move[0], col + move[1]):
-                    moves.append(move)
-            for move in down:
-                if board.is_free(row + move[0], col + move[1]):
-                    moves.append(move)
-        else:
-            for move in up:
-                if board.is_free(row + move[0], col + move[1]):
-                    moves.append(move)
-    return moves
+        for (x, y) in up:
+            if (0 <= row + 2 * x < length) \
+                    and (0 <= col + 2 * y < length) \
+                    and not board.is_free(row + x, col + y) \
+                    and board.get(row + x, col + y).get_color() != piece.get_color() \
+                    and board.is_free(row + 2 * x, col + 2 * y):
+                jumps.append((2 * x, 2 * y))
+        for (x, y) in down:
+            if king \
+                    and (0 <= row + 2 * x < length) \
+                    and (0 <= col + 2 * y < length) \
+                    and not board.is_free(row + x, col + y) \
+                    and board.get(row + x, col + y).get_color() != piece.get_color() \
+                    and board.is_free(row + 2 * x, col + 2 * y):
+                jumps.append((2 * x, 2 * y))
+    return jumps
 
-def jump_generator(board, row, col):
+
+# %% Game essential functions
+def is_over(board, color='Black'):
     length = board.get_len()
-    piece = board.get(row, col)
-    jumps = []
-    if piece:
-        color = piece.get_color()
-        king = piece.is_king()
+    if color == 'White':
+        for (r, c) in board.white_position:
+            moves = check_move(board, r, c)
+            jumps = check_jump(board, r, c)
+            if moves or jumps:
+                return False
+    if color == 'Black':
+        for (r, c) in board.black_position:
+            moves = check_move(board, r, c)
+            jumps = check_jump(board, r, c)
+            if moves or jumps:
+                return False
+    return True
 
 
+def position_trans(old_pos):
+    if str(old_pos).isalnum():
+        return ord(old_pos[0]) - 97, int(old_pos[1]) - 1
+    else:
+        return chr(old_pos[0] + 97) + str(old_pos[1] + 1)
 
 
-def evaluate(state):
+def evaluate(board):
+
+# %% Main part
+def main():
+    user_color = str(input('Please choose the color you want (Black/ White):'))
+    agent_color = 'Black' if user_color == 'White' else 'White'
+
+    board = Board()
+
+    piece_position = str(input('Please enter the location of the piece you want to move:'))
+    if piece_position.isalnum():
+        piece_position = position_trans(piece_position)
+    target_position = str(input('Please enter the location to move:'))
+    if target_position.isalnum():
+        target_position = position_trans(target_position)
 
 
-
-
+if __name__ == '__main__':
+    main()
