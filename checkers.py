@@ -81,8 +81,12 @@ class Board(object):
     def place(self, row, col, piece):
         if piece.color == 'Black':
             self.black_position.append((row, col))
+            if row == self.len-1:
+                piece.turn_king()
         else:
             self.white_position.append((row, col))
+            if row == 0:
+                piece.turn_king()
         self.status[row][col] = piece
 
     def get_color_pos(self, color = 'Black'):
@@ -179,11 +183,12 @@ def check_jump(board, row, col):
     return jumps
 
 
-def jump_generator(board, row, col, move, moves):
+def jump_generator(board, row, col, move, moves, results):
     move.append((row, col))
     jumps = check_jump(board, row, col)
     if not jumps:
         moves.append(move)
+        results.append(copy.deepcopy(board))
     else:
         for jump in jumps:
             (r, c) = (row + jump[0], col + jump[1])
@@ -197,7 +202,7 @@ def jump_generator(board, row, col, move, moves):
             cc = int((col + c)/2)
             captured = copy.copy(board.get(rc, cc))
             board.remove(rc, cc)
-            jump_generator(board, r, c, copy.copy(move), moves)
+            jump_generator(board, r, c, copy.copy(move), moves, results)
             board.place(rc, cc, captured)
             board.remove(r, c)
             board.place(row, col, piece)
@@ -205,21 +210,46 @@ def jump_generator(board, row, col, move, moves):
 
 def all_moves(board, row, col):
     moves = []
-    jump_generator(board, row, col, [], moves)
+    results = []
+    jump_generator(board, row, col, [], moves, results)
     if moves == [[(row, col)]]:
         moves = []
+        results = []
     if not moves:
         simple_moves = check_simple_move(board, row, col)
         for simple_move in simple_moves:
             moves.append([(row, col), (row + simple_move[0], col + simple_move[1])])
-    return moves
+    return moves, results
 
 
 def all_moves_color(board, color):
-    moves = []
-    for pos in board.get_color_pos(color):
-        moves = moves + all_moves(board, pos[0], pos[1])
-    return moves
+    jumped = False
+    moves_all = []
+    results_all = []
+    for (row, col) in board.get_color_pos(color):
+        moves = []
+        results = []
+        jump_generator(board, row, col, [], moves, results)
+        if moves != [[(row, col)]]:
+            jumped = True
+            moves_all += moves
+            results_all += results
+
+    if not jumped:
+        pos_list = copy.deepcopy(board.get_color_pos(color))
+        for (row, col) in pos_list:
+            simple_moves = check_simple_move(board, row, col)
+            for simple_move in simple_moves:
+                r = row + simple_move[0]
+                c = col + simple_move[1]
+                moves_all.append([(row, col), (r, c)])
+                piece = copy.copy(board.get(row, col))
+                board.remove(row, col)
+                board.place(r, c, piece)
+                results_all.append(copy.deepcopy(board))
+                board.remove(r, c)
+                board.place(row, col, piece)
+    return moves_all, results_all
 
 
 # %% Game essential functions
@@ -239,94 +269,83 @@ def position_trans(old_pos):
         return chr(old_pos[0] + 97) + str(old_pos[1] + 1)
 
 
-def evaluate(board, color):
-    length = board.get_length()
-    bp, wp = 0, 0
-    bk, wk = 0, 0
-    bc, wc = 0, 0
-    bkd, wkd = 0, 0
-    bsd, wsd = 0.0, 0.0
-    for row in range(length):
-        for col in range(length):
-            piece = board.get(row, col)
-            if piece:
-                r = row if row > (length - (row + 1)) else (length - (row + 1))
-                c = col if col > (length - (col + 1)) else (length - (col + 1))
-                d = int(((r ** 2.0 + c ** 2.0) ** 0.5) / 2.0)
-                if piece.color() == 'black':
-                    bc += sum([len(v) for v in \
-                               tools.get_captures(board, row, col)])
-                    if piece.is_king():
-                        bk += 1
-                    else:
-                        bp += 1
-                        bkd += row + 1
-                        bsd += d
-                else:
-                    wc += sum([len(v) for v in \
-                               tools.get_captures(board, row, col)])
-                    if piece.is_king():
-                        wk += 1
-                    else:
-                        wp += 1
-                        wkd += length - (row + 1)
-                        wsd += d
-    if color == 'black':
-        black_count_heuristics = \
-                3.125 * (((bp + bk * 2.0) - (wp + wk * 2.0)) \
-                    / 1.0 + ((bp + bk * 2.0) + (wp + wk * 2.0)))
-        black_capture_heuristics = 1.0417 * ((bc - wc)/(1.0 + bc + wc))
-        black_kingdist_heuristics = 1.429 * ((bkd - wkd)/(1.0 + bkd + wkd))
-        black_safe_heuristics = 5.263 * ((bsd - wsd)/(1.0 + bsd + wsd))
-        return black_count_heuristics + black_capture_heuristics \
-                    + black_kingdist_heuristics + black_safe_heuristics
+def evaluate1(board, color):
+    b, B, w, W = 0, 0, 0, 0
+    for (x, y) in board.black_position:
+        if board.get(x,y).king:
+            B += 1
+        else:
+            b += 1
+
+    for (x, y) in board.white_position:
+        if board.get(x, y).king:
+            W += 1
+        else:
+            w += 1
+
+    if color == 'Black':
+        return (b + B * 2) - (w + W * 1)
     else:
-        white_count_heuristics = \
-                3.125 * (((wp + wk * 2.0) - (bp + bk * 2.0)) \
-                    / 1.0 + ((bp + bk * 2.0) + (wp + wk * 2.0)))
-        white_capture_heuristics = 1.0416 * ((wc - bc)/(1.0 + bc + wc))
-        white_kingdist_heuristics = 1.428 * ((wkd - bkd)/(1.0 + bkd + wkd))
-        white_safe_heuristics = 5.263 * ((wsd - bsd)/(1.0 + bsd + wsd))
-        return white_count_heuristics + white_capture_heuristics \
-                    + white_kingdist_heuristics + white_safe_heuristics
+        return (w + W * 2) - (b + B * 1)
+
+
+def evaluate2(board, color):
+    print(1)
+
+
+def evaluate(board, color):
+    return evaluate1(board, color)
+
+
+def another_color(color):
+    if color == 'Black':
+        return 'White'
+    else:
+        return 'Black'
 
 
 #%% Agents
-def alpha_beta_search(board, color):
-    player = game.to_move(state)
-
-    def max_value(board, color, alpha, beta):
-        if is_over(board.status, color):
-            return game.utility(state, player)
-        v = -np.inf
-        for a in all_moves(state):
-            v = max(v, min_value(game.result(state, a), alpha, beta))
+def alpha_beta_search(board, agent_color, maxdepth=float('inf')):
+    color = agent_color
+    def max_value(board, color, alpha, beta, depth=1, maxdepth=float('inf')):
+        if depth >= maxdepth or is_over(board, color):
+            return evaluate1(board, color)
+        v = -float('inf')
+        depth += 1
+        moves_all, results_all = all_moves_color(board, color)
+        for result in results_all:
+            v = max(v, min_value(result, another_color(color), alpha, beta, depth, maxdepth))
             if v >= beta:
                 return v
             alpha = max(alpha, v)
         return v
 
-    def min_value(state, alpha, beta):
-        if game.terminal_test(state):
-            return game.utility(state, player)
-        v = np.inf
-        for a in game.actions(state):
-            v = min(v, max_value(game.result(state, a), alpha, beta))
+    def min_value(board, color, alpha, beta, depth=1, maxdepth=float('inf')):
+        if depth >= maxdepth or is_over(board, color):
+            return evaluate(board, color)
+        depth += 1
+        v = float('inf')
+        moves_all, results_all = all_moves_color(board, color)
+        for result in results_all:
+            v = min(v, max_value(result, another_color(color), alpha, beta, depth, maxdepth))
             if v <= alpha:
                 return v
             beta = min(beta, v)
         return v
 
     # Body of alpha_beta_search:
-    best_score = -np.inf
-    beta = np.inf
+    best_score = -float('inf')
+    beta = float('inf')
     best_action = None
-    for a in game.actions(state):
-        v = min_value(game.result(state, a), best_score, beta)
+    best_result = None
+    moves_all, results_all = all_moves_color(board, color)
+    for i, result in enumerate(results_all):
+        v = min_value(result, another_color(color), best_score, beta, 1, maxdepth)
         if v > best_score:
             best_score = v
-            best_action = a
-    return best_action
+            best_action = moves_all[i]
+            best_result = copy.deepcopy(result)
+    return best_action, best_result
 
 
 
@@ -377,10 +396,30 @@ def main_user():
 
 if __name__ == '__main__':
     board = Board()
-    board.remove(7, 2)
-    board.remove(5, 0)
-    board.place(4, 1, Piece("White"))
-    board.place(3, 2, Piece("Black"))
-    moves = []
-    moves = all_moves(board, 3, 2)
-    main_user()
+    # board.remove(7, 2)
+    # board.remove(5, 0)
+    # board.place(4, 1, Piece("White"))
+    # board.place(3, 2, Piece("Black"))
+    # moves = []
+    # moves, results = all_moves(board, 3, 2)
+    # all_moves_color(board, 'Black')
+
+    import time
+
+    board.display()
+    bb = board
+    while 1:
+        # time.sleep(0.5)
+        aa, bb = alpha_beta_search(bb, 'Black', 3)
+        if aa is None:
+            break
+        print([position_trans(pos) for pos in aa])
+        bb.display()
+        # time.sleep(0.5)
+        aa, bb = alpha_beta_search(bb, 'White', 5)
+        if aa is None:
+            break
+        print([position_trans(pos) for pos in aa])
+        bb.display()
+    print('Game over!')
+    # main_user()
