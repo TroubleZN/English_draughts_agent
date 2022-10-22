@@ -2,6 +2,7 @@
 import numpy as np
 import copy
 
+
 # %% Important classes
 class Piece(object):
     king = False
@@ -274,6 +275,7 @@ def another_color(color):
     else:
         return 'Black'
 
+
 #%% Evaluation functions
 def evaluate1(board, color):
     b, B, w, W = 0, 0, 0, 0
@@ -289,29 +291,28 @@ def evaluate1(board, color):
         else:
             w += 1
 
-    if color == 'White':
+    if color == 'Black':
         if w+W == 0:
             return float('inf')
-        return ((b + B * 1.5) - (w + W * 1.5))/24
+        return ((b + B * 1.5) - (w + W * 1.5))/(b+B+w+W)
     else:
         if b+B == 0:
             return float('inf')
-        return ((w + W * 1.5) - (b + B * 1.5))/24
+        return ((w + W * 1.5) - (b + B * 1.5))/(b+B+w+W)
 
 
 def evaluate2(board, color):
     color_pos = board.get_color_pos(color)
     op_pos = board.get_color_pos(another_color(color))
-    min_dis = float('inf')
     if len(op_pos) == 0:
-        return min_dis
+        return float('inf')
     min_dis = 0
     for a in color_pos:
         distances = []
         for b in op_pos:
             distances.append((a[0]-b[0]) ** 2 + (a[1]-b[1]) ** 2)
         min_dis += min(distances)
-    return min_dis/49/2
+    return 1 - min_dis/49/2
 
 
 def evaluate3(board, color):
@@ -347,13 +348,11 @@ def evaluate3(board, color):
                         wkd += length - (row + 1)
                         wsd += d
     if color == 'Black':
-        black_count_heuristics = \
-            3.125 * (((bp + bk * 2.0) - (wp + wk * 2.0)) \
-                     / 1.0 + ((bp + bk * 2.0) + (wp + wk * 2.0)))
+        b_c = 3.125 * (((bp + bk * 2.0) - (wp + wk * 2.0)) + ((bp + bk * 2.0) + (wp + wk * 2.0)))
         black_capture_heuristics = 1.0417 * ((bc - wc) / (1.0 + bc + wc))
         black_kingdist_heuristics = 1.429 * ((bkd - wkd) / (1.0 + bkd + wkd))
         black_safe_heuristics = 5.263 * ((bsd - wsd) / (1.0 + bsd + wsd))
-        return black_count_heuristics + black_capture_heuristics \
+        return b_c + black_capture_heuristics \
                + black_kingdist_heuristics + black_safe_heuristics
     else:
         white_count_heuristics = \
@@ -365,23 +364,23 @@ def evaluate3(board, color):
         return white_count_heuristics + white_capture_heuristics \
                + white_kingdist_heuristics + white_safe_heuristics
 
+
 def evaluate(board, color, type=0):
     if type == 0:
-        return evaluate1(board, color)
+        return evaluate1(board, color) + evaluate2(board, color)*0.01
         # return evaluate3(board, color)
     elif type == 1:
-        return evaluate1(board, color)
+        return evaluate1(board, color) + evaluate2(board, color)*0.01
     elif type == 2:
-        return evaluate2(board, color)
+        return evaluate3(board, color)
 
 
 #%% Alpha-Beta agent
 def alpha_beta_search(board, agent_color, maxdepth=float('inf'), heuristic_type=0):
     def max_value(board, color, alpha, beta, depth=1, maxdepth=float('inf')):
         if depth >= maxdepth or is_over(board, color):
-            return evaluate(board, color, heuristic_type)
+            return evaluate(board, agent_color, heuristic_type)
         v = -float('inf')
-        depth += 1
         moves_all, results_all = all_moves_color(board, color)
         for result in results_all:
             v = max(v, min_value(result, another_color(color), alpha, beta, depth+1, maxdepth))
@@ -392,7 +391,7 @@ def alpha_beta_search(board, agent_color, maxdepth=float('inf'), heuristic_type=
 
     def min_value(board, color, alpha, beta, depth=1, maxdepth=float('inf')):
         if depth >= maxdepth or is_over(board, color):
-            return evaluate(board, color, heuristic_type)
+            return evaluate(board, agent_color, heuristic_type)
         v = float('inf')
         moves_all, results_all = all_moves_color(board, color)
         for result in results_all:
@@ -460,16 +459,17 @@ def main_user():
             moves_all, results_all = all_moves_color(board, color)
             piece_valid = [position_trans(move[0]) for move in moves_all]
             target_valid = [position_trans(move[1]) for move in moves_all]
+            move2 = [(position_trans(move[0]), position_trans(move[1])) for move in moves_all]
 
             piece_position = str(input('Please enter the location of the piece you want to move:'))
 
             while piece_position not in piece_valid:
                 piece_position = str(input('The piece is not valid! Please enter again:'))
-            piece_position = position_trans(piece_position)
 
             target_position = str(input('Please enter the location to move:'))
-            while target_position not in target_valid:
+            while (piece_position, target_position) not in move2:
                 target_position = str(input('The move is not valid! Please enter again:'))
+
             for i, pos in enumerate(target_valid):
                 if pos == target_position:
                     board = results_all[i]
@@ -477,6 +477,7 @@ def main_user():
             print("The move made is " + " -> ".join(position_trans(pos) for pos in move))
             board.display()
         else:
+            print("Please wait...")
             best_action, best_result = alpha_beta_search(board, color, 7)
             board = best_result
             print("The move made is " + " -> ".join(position_trans(pos) for pos in best_action))
@@ -487,19 +488,9 @@ def main_user():
     print(color + " won!")
 
 
-if __name__ == '__main__':
-    board = Board()
-    # board.remove(7, 2)
-    # board.remove(5, 0)
-    # board.place(4, 1, Piece("White"))
-    # board.place(3, 2, Piece("Black"))
-    # moves = []
-    # moves, results = all_moves(board, 3, 2)
-    # all_moves_color(board, 'Black')
-
-    import time
-    L = 8
-    res = np.zeros((8, 8))
+def main_depth():
+    L = 6
+    res = np.zeros((L, L))
     for i in range(1, L+1):
         for j in range(1, L+1):
             board = Board()
@@ -510,20 +501,19 @@ if __name__ == '__main__':
             while n < 200:
                 n += 2
                 # time.sleep(0.5)
-                aa, bb = alpha_beta_search(bb, color, i, 0) #Black
+                aa, bb = alpha_beta_search(bb, color, i, 1) #Black
                 if aa is None:
                     break
                 # print([position_trans(pos) for pos in aa])
                 # bb.display()
                 # time.sleep(0.5)
                 color = another_color(color)
-                aa, bb = alpha_beta_search(bb, color, j, 0) #White
+                aa, bb = alpha_beta_search(bb, color, j, 1) #White
                 if aa is None:
                     break
                 # print([position_trans(pos) for pos in aa])
                 # bb.display()
                 color = another_color(color)
-            print(res)
             if n == 200:
                 res[i-1, j-1] = -100
             else:
@@ -531,5 +521,86 @@ if __name__ == '__main__':
                     res[i-1, j-1] = 1
                 if color == 'Black':
                     res[i-1, j-1] = 2
+            print(res)
             # print(another_color(color) + " won!")
-            # main_user()
+
+
+def main_depth2():
+    import time
+    L = 7
+    res = np.zeros((L, L))
+    board = Board()
+    board.display()
+    bb = board
+    color = 'Black'
+    n = 0
+    while n < 200:
+        n += 2
+        time.sleep(2)
+        aa, bb = alpha_beta_search(bb, color, 4, 2) #Black
+        if aa is None:
+            break
+        print([position_trans(pos) for pos in aa])
+        bb.display()
+        time.sleep(2)
+        color = another_color(color)
+        aa, bb = alpha_beta_search(bb, color, 2, 2) #White
+        if aa is None:
+            break
+        print([position_trans(pos) for pos in aa])
+        bb.display()
+        color = another_color(color)
+
+
+def main_evaluation():
+    L = 6
+    res = np.zeros((1, L))
+    for i in range(1, L+1):
+        board = Board()
+        bb = board
+        color = 'Black'
+        n = 0
+        win = -1
+        while n < 200:
+            n += 2
+            # time.sleep(0.5)
+            aa_t, bb_t = alpha_beta_search(bb, color, i, 1)  # Black
+            if aa_t is None:
+                win = 2
+                break
+            else:
+                aa, bb = aa_t, bb_t
+            color = another_color(color)
+            aa_t, bb_t = alpha_beta_search(bb, color, i, 2)  # White
+            if aa_t is None:
+                win = 1
+                break
+            else:
+                aa, bb = aa_t, bb_t
+            color = another_color(color)
+        if win == -1:
+            res[0, i-1] = (len(bb.black_position) - len(bb.white_position))*0.1
+        else:
+            res[0, i-1] = win
+        print(res)
+
+
+if __name__ == '__main__':
+    # board = Board()
+    # board.remove(7, 2)
+    # board.remove(5, 0)
+    # board.place(4, 1, Piece("White"))
+    # board.place(3, 2, Piece("Black"))
+    # moves = []
+    # moves, results = all_moves(board, 3, 2)
+    # all_moves_color(board, 'Black')
+
+    import sys
+    args = sys.argv[1:]
+
+    if len(args) > 0 and args[0] == '--compare_depth':
+        main_depth()
+    elif len(args) > 0 and args[0] == '--compare_evaluation':
+        main_evaluation()
+    else:
+        main_user()

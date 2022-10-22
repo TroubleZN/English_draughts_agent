@@ -6,6 +6,11 @@ Language: python 3.8
 Modules: numpy, copy
 
 # Discription
+Two heuristic functions are applied in the function.
+
+- H1: this heuristic function is based on the piece counts. The player with more pieces will be more likely to win and pieces as kings will provide more chances. Thus, each piece in our team will get us one credit and one king will come with half more credit. Each piece in the enemy team will remove one credit and one king will remove half more credit.
+
+- H2: this heuristic function is a complex version, which is a linear combination of some features. For the H1, there is a big chance to avoid battle near the end of the game, which will bring a tie. This one will consider some more features, containing the chances to jump at current status, the smallest distance for a man to be a king, and
 
 # Running instruction
 1) 'cd' into to directory where 'checkers.py' is located
