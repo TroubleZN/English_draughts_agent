@@ -1,6 +1,5 @@
 # %% import packages
 import numpy as np
-import pandas as pd
 import copy
 
 # %% Important classes
@@ -194,18 +193,18 @@ def jump_generator(board, row, col, move, moves, results):
             (r, c) = (row + jump[0], col + jump[1])
             piece = copy.copy(board.get(row, col))
             board.remove(row, col)
-            board.place(r, c, piece)
-            if (piece.color == "Black" and r == board.len - 1) \
-                or (piece.color == "White" and r == 0):
-                piece.turn_king()
+            board.place(r, c, copy.deepcopy(piece))
+            # if (piece.color == "Black" and r == board.len - 1) \
+            #     or (piece.color == "White" and r == 0):
+            #     piece.turn_king()
             rc = int((row + r)/2)
             cc = int((col + c)/2)
             captured = copy.copy(board.get(rc, cc))
             board.remove(rc, cc)
             jump_generator(board, r, c, copy.copy(move), moves, results)
-            board.place(rc, cc, captured)
+            board.place(rc, cc, copy.deepcopy(captured))
             board.remove(r, c)
-            board.place(row, col, piece)
+            board.place(row, col, copy.deepcopy(piece))
 
 
 def all_moves(board, row, col):
@@ -245,10 +244,10 @@ def all_moves_color(board, color):
                 moves_all.append([(row, col), (r, c)])
                 piece = copy.copy(board.get(row, col))
                 board.remove(row, col)
-                board.place(r, c, piece)
+                board.place(r, c, copy.deepcopy(piece))
                 results_all.append(copy.deepcopy(board))
                 board.remove(r, c)
-                board.place(row, col, piece)
+                board.place(row, col, copy.deepcopy(piece))
     return moves_all, results_all
 
 
@@ -269,10 +268,17 @@ def position_trans(old_pos):
         return chr(old_pos[0] + 97) + str(old_pos[1] + 1)
 
 
+def another_color(color):
+    if color == 'Black':
+        return 'White'
+    else:
+        return 'Black'
+
+#%% Evaluation functions
 def evaluate1(board, color):
     b, B, w, W = 0, 0, 0, 0
     for (x, y) in board.black_position:
-        if board.get(x,y).king:
+        if board.get(x, y).king:
             B += 1
         else:
             b += 1
@@ -283,38 +289,102 @@ def evaluate1(board, color):
         else:
             w += 1
 
-    if color == 'Black':
-        return (b + B * 2) - (w + W * 1)
+    if color == 'White':
+        if w+W == 0:
+            return float('inf')
+        return ((b + B * 1.5) - (w + W * 1.5))/24
     else:
-        return (w + W * 2) - (b + B * 1)
+        if b+B == 0:
+            return float('inf')
+        return ((w + W * 1.5) - (b + B * 1.5))/24
 
 
 def evaluate2(board, color):
-    print(1)
+    color_pos = board.get_color_pos(color)
+    op_pos = board.get_color_pos(another_color(color))
+    min_dis = float('inf')
+    if len(op_pos) == 0:
+        return min_dis
+    min_dis = 0
+    for a in color_pos:
+        distances = []
+        for b in op_pos:
+            distances.append((a[0]-b[0]) ** 2 + (a[1]-b[1]) ** 2)
+        min_dis += min(distances)
+    return min_dis/49/2
 
 
-def evaluate(board, color):
-    return evaluate1(board, color)
-
-
-def another_color(color):
+def evaluate3(board, color):
+    length = board.get_len()
+    bp, wp = 0, 0
+    bk, wk = 0, 0
+    bc, wc = 0, 0
+    bkd, wkd = 0, 0
+    bsd, wsd = 0.0, 0.0
+    for row in range(length):
+        for col in range(length):
+            piece = board.get(row, col)
+            if piece:
+                r = row if row > (length - (row + 1)) else (length - (row + 1))
+                c = col if col > (length - (col + 1)) else (length - (col + 1))
+                d = int(((r ** 2.0 + c ** 2.0) ** 0.5) / 2.0)
+                if piece.color == 'Black':
+                    bc += sum([len(v) for v in \
+                               check_jump(board, row, col)])
+                    if piece.is_king():
+                        bk += 1
+                    else:
+                        bp += 1
+                        bkd += row + 1
+                        bsd += d
+                else:
+                    wc += sum([len(v) for v in \
+                               check_jump(board, row, col)])
+                    if piece.is_king():
+                        wk += 1
+                    else:
+                        wp += 1
+                        wkd += length - (row + 1)
+                        wsd += d
     if color == 'Black':
-        return 'White'
+        black_count_heuristics = \
+            3.125 * (((bp + bk * 2.0) - (wp + wk * 2.0)) \
+                     / 1.0 + ((bp + bk * 2.0) + (wp + wk * 2.0)))
+        black_capture_heuristics = 1.0417 * ((bc - wc) / (1.0 + bc + wc))
+        black_kingdist_heuristics = 1.429 * ((bkd - wkd) / (1.0 + bkd + wkd))
+        black_safe_heuristics = 5.263 * ((bsd - wsd) / (1.0 + bsd + wsd))
+        return black_count_heuristics + black_capture_heuristics \
+               + black_kingdist_heuristics + black_safe_heuristics
     else:
-        return 'Black'
+        white_count_heuristics = \
+            3.125 * (((wp + wk * 2.0) - (bp + bk * 2.0)) \
+                     / 1.0 + ((bp + bk * 2.0) + (wp + wk * 2.0)))
+        white_capture_heuristics = 1.0416 * ((wc - bc) / (1.0 + bc + wc))
+        white_kingdist_heuristics = 1.428 * ((wkd - bkd) / (1.0 + bkd + wkd))
+        white_safe_heuristics = 5.263 * ((wsd - bsd) / (1.0 + bsd + wsd))
+        return white_count_heuristics + white_capture_heuristics \
+               + white_kingdist_heuristics + white_safe_heuristics
+
+def evaluate(board, color, type=0):
+    if type == 0:
+        return evaluate1(board, color)
+        # return evaluate3(board, color)
+    elif type == 1:
+        return evaluate1(board, color)
+    elif type == 2:
+        return evaluate2(board, color)
 
 
-#%% Agents
-def alpha_beta_search(board, agent_color, maxdepth=float('inf')):
-    color = agent_color
+#%% Alpha-Beta agent
+def alpha_beta_search(board, agent_color, maxdepth=float('inf'), heuristic_type=0):
     def max_value(board, color, alpha, beta, depth=1, maxdepth=float('inf')):
         if depth >= maxdepth or is_over(board, color):
-            return evaluate1(board, color)
+            return evaluate(board, color, heuristic_type)
         v = -float('inf')
         depth += 1
         moves_all, results_all = all_moves_color(board, color)
         for result in results_all:
-            v = max(v, min_value(result, another_color(color), alpha, beta, depth, maxdepth))
+            v = max(v, min_value(result, another_color(color), alpha, beta, depth+1, maxdepth))
             if v >= beta:
                 return v
             alpha = max(alpha, v)
@@ -322,18 +392,17 @@ def alpha_beta_search(board, agent_color, maxdepth=float('inf')):
 
     def min_value(board, color, alpha, beta, depth=1, maxdepth=float('inf')):
         if depth >= maxdepth or is_over(board, color):
-            return evaluate(board, color)
-        depth += 1
+            return evaluate(board, color, heuristic_type)
         v = float('inf')
         moves_all, results_all = all_moves_color(board, color)
         for result in results_all:
-            v = min(v, max_value(result, another_color(color), alpha, beta, depth, maxdepth))
+            v = min(v, max_value(result, another_color(color), alpha, beta, depth+1, maxdepth))
             if v <= alpha:
                 return v
             beta = min(beta, v)
         return v
 
-    # Body of alpha_beta_search:
+    color = agent_color
     best_score = -float('inf')
     beta = float('inf')
     best_action = None
@@ -348,8 +417,33 @@ def alpha_beta_search(board, agent_color, maxdepth=float('inf')):
     return best_action, best_result
 
 
-
 # %% Main part
+def user_pos_valid(board, piece_position, color):
+    if not (piece_position[0].isalpha() and piece_position[1].isnumeric()):
+        return False
+    else:
+        piece_position = position_trans(piece_position)
+    if not (0 <= piece_position[0] < board.len) or not (0 <= piece_position[1] < board.len):
+        return False
+    if board.is_free(piece_position[0], piece_position[1]):
+        return False
+    if board.get(piece_position[0], piece_position[1]).color != color:
+        return False
+    return True
+
+
+def target_pos_valid(board, piece_position, target_position):
+    if not (target_position[0].isalpha() and target_position[1].isnumeric()):
+        return False
+    else:
+        target_position = position_trans(target_position)
+    all_move = all_moves(board, piece_position[0], piece_position[1])[0]
+    next_pos = [move[-1] for move in all_move]
+    if target_position not in next_pos:
+        return False
+    return True
+
+
 def main_user():
     print("Game start! Let's get ready!")
     user_color = str(input('Please choose the color you want ((Black)/ White):'))
@@ -358,38 +452,37 @@ def main_user():
     agent_color = 'Black' if user_color == 'White' else 'White'
 
     board = Board()
+    board.display()
     color = "Black"
     steps = 1
-    moves = [1]
-    while moves and steps <= 10:
+    while not is_over(board, color) and steps <= 100:
         if user_color == color:
-            board.display()
+            moves_all, results_all = all_moves_color(board, color)
+            piece_valid = [position_trans(move[0]) for move in moves_all]
+            target_valid = [position_trans(move[1]) for move in moves_all]
+
             piece_position = str(input('Please enter the location of the piece you want to move:'))
 
-            while not (piece_position[0].isalpha() and piece_position[1].isnumeric()):
+            while piece_position not in piece_valid:
                 piece_position = str(input('The piece is not valid! Please enter again:'))
             piece_position = position_trans(piece_position)
 
-            moves = all_moves(board, piece_position[0], piece_position[1])
-            next_pos = [move[1] for move in moves]
-
-            while not moves or not board.get(piece_position[0], piece_position[1]) or user_color != board.get(piece_position[0], piece_position[1]).color:
-                piece_position = str(input('1The piece is not valid! Please enter again:'))
-                if piece_position.isalnum():
-                    piece_position = position_trans(piece_position)
-
             target_position = str(input('Please enter the location to move:'))
-            while not (target_position[0].isalpha() and target_position[1].isnumeric()):
+            while target_position not in target_valid:
                 target_position = str(input('The move is not valid! Please enter again:'))
-            if target_position.isalnum():
-                target_position = position_trans(target_position)
-            while target_position not in next_pos:
-                target_position = str(input('The move is not valid! Please enter again:'))
-                if target_position.isalnum():
-                    target_position = position_trans(target_position)
+            for i, pos in enumerate(target_valid):
+                if pos == target_position:
+                    board = results_all[i]
+                    move = moves_all[i]
+            print("The move made is " + " -> ".join(position_trans(pos) for pos in move))
+            board.display()
+        else:
+            best_action, best_result = alpha_beta_search(board, color, 7)
+            board = best_result
+            print("The move made is " + " -> ".join(position_trans(pos) for pos in best_action))
+            board.display()
 
-
-        color = 'Black' if color == 'White' else 'White'
+        color = another_color(color)
         steps += 1
     print(color + " won!")
 
@@ -405,21 +498,38 @@ if __name__ == '__main__':
     # all_moves_color(board, 'Black')
 
     import time
-
-    board.display()
-    bb = board
-    while 1:
-        # time.sleep(0.5)
-        aa, bb = alpha_beta_search(bb, 'Black', 3)
-        if aa is None:
-            break
-        print([position_trans(pos) for pos in aa])
-        bb.display()
-        # time.sleep(0.5)
-        aa, bb = alpha_beta_search(bb, 'White', 5)
-        if aa is None:
-            break
-        print([position_trans(pos) for pos in aa])
-        bb.display()
-    print('Game over!')
-    # main_user()
+    L = 8
+    res = np.zeros((8, 8))
+    for i in range(1, L+1):
+        for j in range(1, L+1):
+            board = Board()
+            # board.display()
+            bb = board
+            color = 'Black'
+            n = 0
+            while n < 200:
+                n += 2
+                # time.sleep(0.5)
+                aa, bb = alpha_beta_search(bb, color, i, 0) #Black
+                if aa is None:
+                    break
+                # print([position_trans(pos) for pos in aa])
+                # bb.display()
+                # time.sleep(0.5)
+                color = another_color(color)
+                aa, bb = alpha_beta_search(bb, color, j, 0) #White
+                if aa is None:
+                    break
+                # print([position_trans(pos) for pos in aa])
+                # bb.display()
+                color = another_color(color)
+            print(res)
+            if n == 200:
+                res[i-1, j-1] = -100
+            else:
+                if color == 'White':
+                    res[i-1, j-1] = 1
+                if color == 'Black':
+                    res[i-1, j-1] = 2
+            # print(another_color(color) + " won!")
+            # main_user()
