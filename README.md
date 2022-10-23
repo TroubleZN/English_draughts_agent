@@ -1,4 +1,7 @@
 # English draughts game playing agent
+## Rules
+The detailed rule can be found in https://en.wikipedia.org/wiki/English_draughts
+
 ## Program information
 Language: python 3.8
 
